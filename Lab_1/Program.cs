@@ -1,5 +1,5 @@
 ﻿
-Logger.SetLevel(Logger.LogLevel.Error);
+Logger.SetLevel(Logger.LogLevel.Trace);
 Logger.SetFormat("[%t] [%l] %n: %m");
 
 string[] inputs = { "()", ")((()))", "(", "(())((()())())" };

@@ -21,16 +21,25 @@ class Logger
     {
         if(level < Logger.level) return;
 
-        string output = format.Replace("%t", DateTime.Now.ToString("HH:mm:ss"));
-        output = output.Replace("%l", level.ToString().ToUpperInvariant());
-        output = output.Replace("%n", name);
-        output = output.Replace("%m", message);
-
+        string randomMessage = "";
         if(format.Contains("%r"))
         {
             string[] messages = randomMessages[(int)level];
-            output = output.Replace("%r", messages[Random.Shared.Next(messages.Length)]);
+            randomMessage = messages[Random.Shared.Next(messages.Length)];
         }
+
+        // Replace only placeholders in the format, leaving inserted text unchanged.
+        string time = DateTime.Now.ToString("HH:mm:ss");
+        string output = System.Text.RegularExpressions.Regex.Replace(
+            format, "%[tlnmr]", match => match.Value switch
+            {
+                "%t" => time,
+                "%l" => level.ToString().ToUpperInvariant(),
+                "%n" => name,
+                "%m" => message,
+                "%r" => randomMessage,
+                _ => match.Value
+            });
 
         Console.WriteLine(output);
     }
