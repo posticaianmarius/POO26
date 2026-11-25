@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Lab_2/Zeya.csproj" />
+  <Project Path="Zeya.Checks/Zeya.Checks.csproj" />
+</Solution>

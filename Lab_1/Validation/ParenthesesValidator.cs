@@ -2,10 +2,12 @@ class ParenthesesValidator
 {
     private static readonly Logger logger = new Logger("Parentheses");
 
+    // Validate parentheses
     public static bool IsValid(string input)
     {
         int balance = 0;
 
+        // Check each character
         for(int i = 0; i < input.Length; i ++)
         {
             if(input[i] == '(')
@@ -15,6 +17,7 @@ class ParenthesesValidator
             }
             else if(input[i] == ')')
             {
+                // Check for extra closing
                 if(balance == 0)
                 {
                     logger.Log(Logger.LogLevel.Warn, "Unexpected closing");
@@ -28,6 +31,7 @@ class ParenthesesValidator
             }
         }
 
+        // Check for unmatched opening
         bool valid = balance == 0;
 
         if(!valid) logger.Log(Logger.LogLevel.Error, $"Invalid: {input} - missing closing");
