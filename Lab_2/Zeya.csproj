@@ -11,6 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Tokenizers.HuggingFace" Version="3.23.1" />
+    <None Update="Chat/**/*.json;Chat/**/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="../Lab_1/Logging/Logger.cs" Link="Logging/Logger.cs" />
     <Compile Include="../Lab_1/Logging/Formatter.cs" Link="Logging/Formatter.cs" />
     <Compile Include="../Lab_1/Logging/ConsoleSink.cs" Link="Logging/ConsoleSink.cs" />

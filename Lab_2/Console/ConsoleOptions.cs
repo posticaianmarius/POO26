@@ -5,7 +5,7 @@ static class ConsoleOptions
     private const Logger.LogLevel DefaultLogLevel = Logger.LogLevel.Info;
 
     // Read console options
-    public static bool TryRead(out int memoryTier, out Logger.LogLevel logLevel)
+    public static bool TryRead(IReadOnlyList<int> tierPercentages, out int memoryTier, out Logger.LogLevel logLevel)
     {
         memoryTier = DefaultMemoryTier;
         logLevel = DefaultLogLevel;
@@ -13,7 +13,7 @@ static class ConsoleOptions
         // Read memory tier
         while(true)
         {
-            Console.Write($"Memory tier (1 = 2 exchanges, 2 = 6, 3 = 10) [{DefaultMemoryTier}]: ");
+            Console.Write($"History token budget (1 = {tierPercentages[0]}%, 2 = {tierPercentages[1]}%, 3 = {tierPercentages[2]}%) [{DefaultMemoryTier}]: ");
 
             string? input = Console.ReadLine()?.Trim();
             if(input is null) return false;

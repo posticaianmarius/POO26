@@ -1,30 +1,39 @@
-
-namespace Zeya.Assistant;
-
-public sealed class ConversationHistory
+public class ConversationHistory
 {
-    private readonly List<ChatMessage> messages = [];
-    private readonly int exchangeCapacity;
+    private readonly List<Exchange> exchanges = [];
     private readonly Logger logger = new("ConversationHistory");
 
-    private ConversationHistory(int exchangeCapacity) => this.exchangeCapacity = exchangeCapacity;
-    public static ConversationHistory Tier1() => new(2);
-    public static ConversationHistory Tier2() => new(6);
-    public static ConversationHistory Tier3() => new(10);
-
-    public ChatMessage[] GetChatContext() => messages.ToArray();
-
-    internal void AddExchange(ChatMessage user, ChatMessage reply)
+    // Retrieve recent exchanges within the token budget
+    public ChatMessage[] GetChatContext(long tokenBudget)
     {
-        if(messages.Count == exchangeCapacity * 2)
+        int start = exchanges.Count;
+        while(start > 0 && exchanges[start - 1].TokenCount <= tokenBudget)
         {
-            messages.RemoveRange(0, 2);
-            logger.Log(Logger.LogLevel.Warn, "History full. Dropped the oldest exchange.");
+            start --;
+            tokenBudget -= exchanges[start].TokenCount;
         }
-        messages.Add(user);
-        messages.Add(reply);
-        logger.Log(Logger.LogLevel.Trace, "Exchange added.");
+
+        if(start > 0) logger.Log(Logger.LogLevel.Warn, $"Omitted {start} exchanges from context.");
+
+        var context = new ChatMessage[checked((exchanges.Count - start) * 2)];
+        for(int index = start, offset = 0; index < exchanges.Count; index ++, offset += 2)
+        {
+            context[offset] = exchanges[index].User;
+            context[offset + 1] = exchanges[index].Reply;
+        }
+        return context;
     }
 
-    public void Clear() => messages.Clear();
+    // Store an exchange with its token count
+    public void AddExchange(ChatMessage user, ChatMessage reply, int tokenCount)
+    {
+        exchanges.Add(new Exchange(user, reply, tokenCount));
+        logger.Log(Logger.LogLevel.Trace, $"Exchange added. Tokens: {tokenCount}.");
+    }
+
+    // Clear conversation history
+    public void Clear() => exchanges.Clear();
+
+    // User-assistant message pair
+    private record Exchange(ChatMessage User, ChatMessage Reply, int TokenCount);
 }

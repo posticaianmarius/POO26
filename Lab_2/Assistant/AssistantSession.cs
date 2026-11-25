@@ -1,62 +1,75 @@
-
 using System.Text.Json;
 
-namespace Zeya.Assistant;
-
-public sealed class AssistantSession
+public class AssistantSession
 {
     private const int MaximumToolCalls = 3;
+    private readonly Toolbox toolbox = new();
+    private readonly Logger logger = new("AssistantSession");
+
     private readonly IChatModel chatModel;
     private readonly ConversationHistory conversation;
-    private readonly Toolbox toolbox = new();
-    private readonly Logger logger = new("Zeya");
+    private readonly int historyBudgetPercent;
 
-    public AssistantSession(IChatModel chatModel, ConversationHistory conversation)
+    public AssistantSession(IChatModel chatModel, ConversationHistory conversation, int historyBudgetPercent)
     {
-        ArgumentNullException.ThrowIfNull(chatModel);
-        ArgumentNullException.ThrowIfNull(conversation);
         this.chatModel = chatModel;
         this.conversation = conversation;
+        this.historyBudgetPercent = historyBudgetPercent;
     }
 
     // Generate reply and store exchange
     public async Task<string> ReplyAsync(string input)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(input);
-        var system = new ChatMessage("system", AssistantInstructions.SystemPrompt);
-        var user = new ChatMessage("user", input);
-        List<ChatMessage> request = [system, .. conversation.GetChatContext(), user];
-        ChatMessage answer = await ReplyWithToolsAsync(request);
-        conversation.AddExchange(user, answer);
+        ChatMessage system = new ChatMessage("system", AssistantSettings.SystemPrompt);
+        ChatMessage user = new ChatMessage("user", input);
+
+        int userTokens = chatModel.EstimateMessageTokens(user.Content);
+        ChatMessage answer = await ReplyWithToolsAsync(system, user, userTokens);
+
+        int exchangeTokens = userTokens + chatModel.EstimateMessageTokens(answer.Content);
+        conversation.AddExchange(user, answer, exchangeTokens);
+
         return answer.Content;
     }
 
     // Generate reply with tools
-    private async Task<ChatMessage> ReplyWithToolsAsync(List<ChatMessage> request)
+    private async Task<ChatMessage> ReplyWithToolsAsync(ChatMessage system, ChatMessage user, int userTokens)
     {
+        List<ChatMessage> turn = [user];
+
+        // Calculate available context
+        long availableTokens = (long)chatModel.PromptTokenLimit - chatModel.EstimateMessageTokens(system.Content) - userTokens;
+
         for(int toolCalls = 0; ; toolCalls ++)
         {
-            ChatMessage answer = await chatModel.ChatAsync(request);
+            long historyBudget = availableTokens * historyBudgetPercent / 100;
+            ChatMessage[] history = conversation.GetChatContext(historyBudget);
 
-            if(answer is not { Role: "assistant" } || string.IsNullOrWhiteSpace(answer.Content))
-            {
-                throw new InvalidOperationException("IChatModel must return a nonempty assistant message.");
-            }
+            logger.Log(Logger.LogLevel.Trace, $"History: {history.Length} messages, budget: {historyBudget} tokens.");
+
+            ChatMessage answer = await chatModel.ChatAsync([system, .. history, .. turn]);
 
             if(!TryReadToolCall(answer.Content, out string toolName, out string input)) return answer;
 
+            // Enforce tool limit
             if(toolCalls == MaximumToolCalls)
             {
-                const string message = "Tool call limit reached. Try a simpler question.";
+                const string message = "Tool call limit reached.";
                 logger.Log(Logger.LogLevel.Error, message);
-                throw new InvalidDataException(message);
+                return new ChatMessage("assistant", message);
             }
 
-            string result = toolName.Length == 0 ? "Error: send a JSON object with a tool name and a string input." : toolbox.Run(toolName, input);
-            if(result.StartsWith("Error:", StringComparison.Ordinal)) logger.Log(Logger.LogLevel.Error, $"Tool request failed. {result}");
+            // Execute tool
+            logger.Log(Logger.LogLevel.Trace, $"Tool requested: {toolName}.");
 
-            request.Add(answer);
-            request.Add(new ChatMessage("user", $"Tool result: {result}"));
+            string result = toolbox.Run(toolName, input);
+            var toolResult = new ChatMessage("user", $"Tool result: {result}");
+
+            turn.Add(answer);
+            turn.Add(toolResult);
+
+            // Update token budget
+            availableTokens -= (long)chatModel.EstimateMessageTokens(answer.Content) + chatModel.EstimateMessageTokens(toolResult.Content);
         }
     }
 
@@ -65,31 +78,27 @@ public sealed class AssistantSession
     {
         toolName = "";
         input = "";
+
         int start = answer.IndexOf('{');
-        if(start < 0 || !answer.AsSpan(start).Contains("\"tool\"", StringComparison.Ordinal)) return false;
         int end = answer.LastIndexOf('}');
-        if(end < start) return true;
+        if(start < 0 || end < start || !answer.AsSpan(start).Contains("\"tool\"", StringComparison.Ordinal)) return false;
 
-        try
-        {
-            using var document = JsonDocument.Parse(answer[start..(end + 1)]);
-            JsonElement call = document.RootElement;
-            if(!call.TryGetProperty("tool", out JsonElement tool)) return false;
+        using var document = JsonDocument.Parse(answer[start..(end + 1)]);
+        JsonElement call = document.RootElement;
 
-            if(tool.ValueKind != JsonValueKind.String || !call.TryGetProperty("input", out JsonElement toolInput) || toolInput.ValueKind != JsonValueKind.String)
-            {
-                return true;
-            }
+        if(!call.TryGetProperty("tool", out JsonElement tool) || tool.ValueKind != JsonValueKind.String) return false;
+        if(!call.TryGetProperty("input", out JsonElement toolInput) || toolInput.ValueKind != JsonValueKind.String) return false;
 
-            toolName = tool.GetString()!.Trim();
-            input = toolInput.GetString()!;
-            return true;
-        }
-        catch(JsonException)
-        {
-            return true;
-        }
+        toolName = tool.GetString()!.Trim();
+        input = toolInput.GetString()!;
+
+        return toolName.Length > 0;
     }
 
-    public void ClearConversation() => conversation.Clear();
+    // Clear conversation
+    public void ClearConversation()
+    {
+        conversation.Clear();
+        logger.Log(Logger.LogLevel.Info, "Conversation cleared.");
+    }
 }

@@ -1,33 +1,29 @@
-
 using System.Text;
-using Zeya.Assistant;
-using Zeya.Chat.Ollama;
-using Zeya.ConsoleUI;
 
-// Encoding
+// Configure console encoding
 Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
-if(!ConsoleOptions.TryRead(out int memoryTier, out Logger.LogLevel logLevel)) return;
+// Read user settings
+int[] tierPercentages = [50, 75, 100];
+if(!ConsoleOptions.TryRead(tierPercentages, out int memoryTier, out Logger.LogLevel logLevel)) return;
 
 Logger.SetLevel(logLevel);
 
-ConversationHistory history = memoryTier switch
-{
-    1 => ConversationHistory.Tier1(),
-    2 => ConversationHistory.Tier2(),
-    3 => ConversationHistory.Tier3(),
-    _ => throw new InvalidOperationException("Invalid memory tier.")
-};
+// Initialize conversation history
+var history = new ConversationHistory();
 
+// Configure HTTP client
 using var httpClient = new HttpClient
 {
     BaseAddress = AssistantSettings.OllamaAddress,
     Timeout = AssistantSettings.RequestTimeout
 };
 
+// Initialize assistant
 IChatModel chatModel = new OllamaChatModel(httpClient, AssistantSettings.ModelName);
-var assistant = new AssistantSession(chatModel, history);
-var consoleChat = new ConsoleChat(assistant);
+AssistantSession assistant = new AssistantSession(chatModel, history, tierPercentages[memoryTier - 1]);
+ConsoleChat consoleChat = new ConsoleChat(assistant);
 
+// Start chat loop
 await consoleChat.RunAsync();
