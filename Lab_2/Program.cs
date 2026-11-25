@@ -1,12 +1,8 @@
 
 using System.Text;
-using System.Text.Json;
 using Zeya.Assistant;
-using Zeya.Chat;
 using Zeya.Chat.Ollama;
 using Zeya.ConsoleUI;
-using Zeya.Memory;
-using Zeya.Memory.Storage;
 
 // Encoding
 Console.InputEncoding = Encoding.UTF8;
@@ -16,26 +12,13 @@ if(!ConsoleOptions.TryRead(out int memoryTier, out Logger.LogLevel logLevel)) re
 
 Logger.SetLevel(logLevel);
 
-// Select history budget
-int historyBudgetPercent = memoryTier switch
+ConversationHistory history = memoryTier switch
 {
-    1 => 50,
-    2 => 75,
-    3 => 100,
-    _ => 50
+    1 => ConversationHistory.Tier1(),
+    2 => ConversationHistory.Tier2(),
+    3 => ConversationHistory.Tier3(),
+    _ => throw new InvalidOperationException("Invalid memory tier.")
 };
-
-var history = new ConversationHistory();
-var memoryStore = new JsonMemoryStore();
-
-try {await memoryStore.LoadAsync();}
-catch(Exception error) when(error is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
-{
-    Console.WriteLine($"Cannot load memory: {error.Message}");
-    Console.WriteLine(memoryStore.FilePath);
-    Environment.ExitCode = 1;
-    return;
-}
 
 using var httpClient = new HttpClient
 {
@@ -44,9 +27,7 @@ using var httpClient = new HttpClient
 };
 
 IChatModel chatModel = new OllamaChatModel(httpClient, AssistantSettings.ModelName);
-
-var memoryService = new MemoryService(chatModel, memoryStore);
-var assistant = new AssistantSession(chatModel, memoryService, history, historyBudgetPercent);
-var consoleChat = new ConsoleChat(assistant, memoryStore.FilePath);
+var assistant = new AssistantSession(chatModel, history);
+var consoleChat = new ConsoleChat(assistant);
 
 await consoleChat.RunAsync();

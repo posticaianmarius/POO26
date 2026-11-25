@@ -11,28 +11,19 @@ public sealed class OllamaChatModel : IChatModel
     // Token limits
     private const int ContextTokenLimit = 8192;
     private const int ReplyTokenLimit = 1024;
-    private const int PromptFramingTokens = 32;
-    private const int MessageFramingTokens = 16;
 
     private readonly HttpClient httpClient;
     private readonly string modelName;
-    private readonly ModelTokenCounter tokenCounter;
     private readonly Logger logger = new("Ollama");
-
-    public int PromptTokenLimit => ContextTokenLimit - ReplyTokenLimit - PromptFramingTokens;
 
     public OllamaChatModel(HttpClient httpClient, string modelName)
     {
         this.httpClient = httpClient;
         this.modelName = modelName;
-        tokenCounter = new ModelTokenCounter(modelName);
     }
 
-    // Estimate token usage
-    public int EstimateMessageTokens(string text) => tokenCounter.Count(text) + MessageFramingTokens;
-
     // Request AI response
-    public async Task<ChatMessage> ChatAsync(IReadOnlyList<ChatMessage> messages, JsonElement? responseSchema = null)
+    public async Task<ChatMessage> ChatAsync(IReadOnlyList<ChatMessage> messages)
     {
         var request = new
         {
@@ -41,25 +32,15 @@ public sealed class OllamaChatModel : IChatModel
             stream = false,
             think = false,
             keep_alive = "5m",
-            format = responseSchema,
             options = new
             {
                 num_ctx = ContextTokenLimit,
                 num_predict = ReplyTokenLimit,
-                temperature = responseSchema.HasValue ? 0 : 0.7
+                temperature = 0.7
             }
         };
 
-        string requestKind = responseSchema.HasValue ? "Memory" : "Chat";
-
-        if(!responseSchema.HasValue && messages.Count > 0 && messages[^1].Role == "user")
-        {
-            int? inputTokens = tokenCounter.CountExact(messages[^1].Content);
-            string count = inputTokens?.ToString(CultureInfo.InvariantCulture) ?? "n/a";
-            logger.Log(Logger.LogLevel.Info, $"Chat: input tokens={count}");
-        }
-
-        logger.Log(Logger.LogLevel.Trace, $"{requestKind}: sending {messages.Count} messages.");
+        logger.Log(Logger.LogLevel.Trace, $"Chat: sending {messages.Count} messages.");
 
         var timer = Stopwatch.StartNew();
 
@@ -82,13 +63,13 @@ public sealed class OllamaChatModel : IChatModel
             string rate = metrics.TokensPerSecond?.ToString("F2", CultureInfo.InvariantCulture) ?? "n/a";
             string seconds = metrics.Elapsed.TotalSeconds.ToString("F3", CultureInfo.InvariantCulture);
 
-            logger.Log(Logger.LogLevel.Info, $"{requestKind}: prompt={prompt} completion={completion} elapsed={seconds}s tokens/sec={rate}");
+            logger.Log(Logger.LogLevel.Info, $"Chat: prompt={prompt} completion={completion} elapsed={seconds}s tokens/sec={rate}");
 
             return answer with { Metrics = metrics };
         }
         catch(Exception error) when(error is HttpRequestException or OperationCanceledException or JsonException or InvalidDataException or IOException)
         {
-            logger.Log(Logger.LogLevel.Error, $"{requestKind} request failed: {error.Message}");
+            logger.Log(Logger.LogLevel.Error, $"Chat request failed: {error.Message}");
             throw;
         }
     }

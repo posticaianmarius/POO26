@@ -13,7 +13,7 @@ static class ConsoleOptions
         // Read memory tier
         while(true)
         {
-            Console.Write($"History token budget (1 = 50%, 2 = 75%, 3 = 100%) [{DefaultMemoryTier}]: ");
+            Console.Write($"Memory tier (1 = 2 exchanges, 2 = 6, 3 = 10) [{DefaultMemoryTier}]: ");
 
             string? input = Console.ReadLine()?.Trim();
             if(input is null) return false;
